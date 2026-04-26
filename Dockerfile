@@ -24,12 +24,9 @@ COPY training/ ./training/
 COPY run_hf_training.sh ./run_hf_training.sh
 RUN sed -i 's/\r$//' ./run_hf_training.sh && chmod +x ./run_hf_training.sh
 
-# Grant full read/write access so Hugging Face user 1000 can write model checkpoints
-RUN chmod -R 777 /app
-
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Execute the training script
-CMD ["./run_hf_training.sh"]
+# Start the FastAPI server on HF Spaces port
+CMD ["sh", "-c", "uvicorn salespath_env.server.app:app --host 0.0.0.0 --port ${PORT}"]
