@@ -124,6 +124,16 @@ def _extract_steps_completed(prompt_text: str) -> list[str]:
     return []
 
 
+def _extract_required_workflow(prompt_text: str) -> list[str]:
+    match = re.search(r"Required workflow steps \(in order\):\s*(.+)", prompt_text)
+    if not match:
+        return []
+    raw = match.group(1).strip()
+    if raw.lower().startswith("dynamic"):
+        return []
+    return [part.strip().upper() for part in raw.split("->") if part.strip()]
+
+
 def salespath_reward_func(prompts, completions, **kwargs):
     """
     Lightweight GRPO reward signal aligned with project rules.
@@ -134,15 +144,48 @@ def salespath_reward_func(prompts, completions, **kwargs):
     for prompt, completion in zip(prompts, completions):
         action_type, content = _extract_action_content(completion)
         steps_completed = _extract_steps_completed(prompt)
+        required_workflow = _extract_required_workflow(prompt)
 
         reward = 0.0
 
-        # Format + valid action
-        if action_type in VALID_ACTIONS and content:
-            reward += 0.1
+        # Format + valid action (make this dense, not binary)
+        has_action_prefix = "ACTION:" in completion.upper()
+        has_content_prefix = "CONTENT:" in completion.upper()
+        if has_action_prefix:
+            reward += 0.05
+        if has_content_prefix:
+            reward += 0.05
+
+        if action_type in VALID_ACTIONS:
+            reward += 0.15
         else:
             rewards.append(-0.2)
             continue
+
+        if content:
+            reward += 0.1
+        else:
+            reward -= 0.1
+
+        # Encourage concise responses so completions terminate before cap.
+        content_len = len(content)
+        if content_len > 220:
+            reward -= 0.15
+        elif content_len > 120:
+            reward -= 0.05
+        elif 12 <= content_len <= 120:
+            reward += 0.05
+
+        # Penalize rambling multi-paragraph completions.
+        if completion.count("\n") > 4:
+            reward -= 0.1
+
+        # Positive signal for selecting the next expected workflow step.
+        if required_workflow:
+            next_idx = min(len(steps_completed), len(required_workflow) - 1)
+            expected = required_workflow[next_idx]
+            if action_type == expected:
+                reward += 0.2
 
         # Rule hints
         if not steps_completed and action_type != "PROSPECT":
@@ -154,7 +197,8 @@ def salespath_reward_func(prompts, completions, **kwargs):
         if action_type == "CLOSE" and "OFFER_DEMO" not in steps_completed:
             reward -= 0.2  # R09
 
-        rewards.append(float(reward))
+        # Keep rewards bounded for training stability.
+        rewards.append(float(max(-1.0, min(1.0, reward))))
 
     return rewards
 
@@ -248,12 +292,12 @@ def parse_args():
     # GRPO-specific knobs
     parser.add_argument("--grpo-steps", type=int, default=30)
     parser.add_argument("--grpo-dataset-size", type=int, default=128)
-    parser.add_argument("--learning-rate", type=float, default=1e-5)
+    parser.add_argument("--learning-rate", type=float, default=5e-6)
     parser.add_argument("--per-device-train-batch-size", type=int, default=2)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=4)
-    parser.add_argument("--num-generations", type=int, default=8)
-    parser.add_argument("--max-completion-length", type=int, default=128)
-    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--num-generations", type=int, default=4)
+    parser.add_argument("--max-completion-length", type=int, default=64)
+    parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--logging-steps", type=int, default=10)
     parser.add_argument("--save-steps", type=int, default=100)
 
