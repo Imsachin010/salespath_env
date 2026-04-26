@@ -33,7 +33,38 @@ WORKFLOW_MAP = {
 }
 
 
-def _load_model_and_tokenizer(model_name: str):
+def _load_model_and_tokenizer(model_name: str, use_unsloth: bool = False):
+    if use_unsloth:
+        try:
+            from unsloth import FastLanguageModel
+            print("Loading with Unsloth in 4-bit + LoRA...")
+            model, tokenizer = FastLanguageModel.from_pretrained(
+                model_name=model_name,
+                max_seq_length=2048,
+                load_in_4bit=True,
+                fast_inference=True,
+                max_lora_rank=16,
+                max_lora_rank_type="lora",
+            )
+            # Inject LoRA adapters to drastically reduce VRAM
+            model = FastLanguageModel.get_peft_model(
+                model,
+                r=16,
+                target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                                "gate_proj", "up_proj", "down_proj"],
+                lora_alpha=16,
+                lora_dropout=0,
+                bias="none",
+                use_gradient_checkpointing="unsloth",
+                random_state=3407,
+            )
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+            return model, tokenizer
+        except ImportError:
+            print("Warning: unsloth not found. Falling back to standard HF loading (High VRAM).")
+
+    # Standard loading (for curriculum or fallback)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -242,7 +273,7 @@ def run_grpo(args):
             "or fix local pyarrow/datasets installation first."
         ) from exc
 
-    _, tokenizer = _load_model_and_tokenizer(args.model_name)
+    model, tokenizer = _load_model_and_tokenizer(args.model_name, use_unsloth=True)
     rows = _build_grpo_dataset_rows(args.grpo_dataset_size)
     train_dataset = Dataset.from_list(rows)
 
@@ -261,7 +292,7 @@ def run_grpo(args):
     )
 
     trainer = GRPOTrainer(
-        model=args.model_name,
+        model=model,
         reward_funcs=salespath_reward_func,
         args=config,
         train_dataset=train_dataset,
