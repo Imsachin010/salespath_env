@@ -5,15 +5,8 @@ from __future__ import annotations
 import uuid
 from typing import Dict, List
 from pydantic import BaseModel, Field
- 
-# Safe OpenEnv Imports: Use OpenEnv base classes if available, 
-# otherwise fall back to Pydantic to bypass security blocks.
-try:
-    from openenv.core import Action, Observation, State
-except (ImportError, Exception):
-    Action = BaseModel
-    Observation = BaseModel
-    State = BaseModel
+
+from openenv.core import Action, Observation, State
 
 
 VALID_ACTIONS = {
