@@ -66,12 +66,15 @@ def _load_model_and_tokenizer(model_name: str, use_unsloth: bool = False):
             print("Warning: unsloth not found. Falling back to standard HF loading (High VRAM).")
 
     # Standard loading (for curriculum or fallback)
+    import torch
+    bf16_supported = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        dtype="auto",
+        torch_dtype=torch.bfloat16 if bf16_supported else torch.float16,
         device_map="auto",
     )
     return model, tokenizer
