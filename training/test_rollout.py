@@ -1,14 +1,17 @@
 # training/test_rollout.py
-# Run from project root: .\.spa\Scripts\python.exe training\test_rollout.py
+# Works both as: python training/test_rollout.py
+# And as:        python -m training.test_rollout
 
 import sys
 import os
 import asyncio
 
-# Ensure project root is on path
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
+# Add BOTH project root AND training/ dir so imports work in all contexts
+_ROOT     = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_TRAINING = os.path.abspath(os.path.dirname(__file__))
+for _p in [_ROOT, _TRAINING]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from rollout import run_episode
