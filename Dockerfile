@@ -16,12 +16,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the salespath_env package
+# Copy the salespath_env package and training scripts
 COPY salespath_env/ ./salespath_env/
+COPY training/ ./training/
 
 # Copy and set permissions for the training script
 COPY run_hf_training.sh ./run_hf_training.sh
 RUN sed -i 's/\r$//' ./run_hf_training.sh && chmod +x ./run_hf_training.sh
+
+# Grant full read/write access so Hugging Face user 1000 can write model checkpoints
+RUN chmod -R 777 /app
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
