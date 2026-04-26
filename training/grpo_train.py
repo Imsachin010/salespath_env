@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from training.curriculum import DEFAULT_CURRICULUM, sample_difficulty
@@ -277,6 +278,8 @@ def run_grpo(args):
     rows = _build_grpo_dataset_rows(args.grpo_dataset_size)
     train_dataset = Dataset.from_list(rows)
 
+    bf16_supported = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+
     config = GRPOConfig(
         output_dir=args.output_dir,
         learning_rate=args.learning_rate,
@@ -289,6 +292,8 @@ def run_grpo(args):
         save_steps=args.save_steps,
         max_steps=args.grpo_steps,
         report_to="none",
+        fp16=not bf16_supported,
+        bf16=bf16_supported,
     )
 
     trainer = GRPOTrainer(
