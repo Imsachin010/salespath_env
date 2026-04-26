@@ -350,7 +350,7 @@ def parse_args():
     parser.add_argument("--grpo-steps", type=int, default=30)
     parser.add_argument("--grpo-dataset-size", type=int, default=128)
     parser.add_argument("--learning-rate", type=float, default=5e-6)
-    parser.add_argument("--per-device-train-batch-size", type=int, default=2)
+    parser.add_argument("--per-device-train-batch-size", type=int, default=4)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=4)
     parser.add_argument("--num-generations", type=int, default=4)
     parser.add_argument("--max-completion-length", type=int, default=64)
