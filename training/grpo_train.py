@@ -74,7 +74,7 @@ def _load_model_and_tokenizer(model_name: str, use_unsloth: bool = False):
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.bfloat16 if bf16_supported else torch.float16,
+        torch_dtype=torch.bfloat16 if bf16_supported else torch.float32,
         device_map="auto",
     )
     return model, tokenizer
