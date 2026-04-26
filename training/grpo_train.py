@@ -365,7 +365,7 @@ def parse_args():
     parser.add_argument("--steps", type=int, default=100, help="Curriculum rollout steps.")
     parser.add_argument("--print-every", type=int, default=10)
     parser.add_argument("--output-dir", default="salespath_training_outputs")
-    parser.add_argument("--hub-repo", default="Imsachin010/salespath-qwen25-7b")
+    parser.add_argument("--hub-repo", default="Imsachin010/salespath-qwen25-0.5b")
     parser.add_argument("--push-to-hub", action="store_true")
     parser.add_argument("--push-merged", action="store_true")
 

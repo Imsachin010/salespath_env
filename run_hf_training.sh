@@ -8,11 +8,11 @@ uvicorn salespath_env.server.app:app --host 0.0.0.0 --port 7860 &
 sleep 5
 
 # Start the GRPO Training using standard HuggingFace (PEFT)
-echo "Starting 7B GRPO Training..."
+echo "Starting 0.5B GRPO Training..."
 PYTORCH_ALLOC_CONF=expandable_segments:True python -u -m training.grpo_train \
     --mode grpo \
     --env-url http://127.0.0.1:7860 \
-    --model-name Qwen/Qwen2.5-7B-Instruct \
+    --model-name Qwen/Qwen2.5-0.5B-Instruct \
     --grpo-steps 150 \
     --grpo-dataset-size 128 \
     --num-generations 4 \
@@ -22,7 +22,7 @@ PYTORCH_ALLOC_CONF=expandable_segments:True python -u -m training.grpo_train \
     --output-dir ./salespath_out \
     --logging-steps 10 \
     --push-to-hub \
-    --hub-repo Imsachin010/salespath-qwen25-7b
+    --hub-repo Imsachin010/salespath-qwen25-0.5b
 
 echo "Training complete and pushed to hub! Keeping container alive for logs..."
 tail -f /dev/null
