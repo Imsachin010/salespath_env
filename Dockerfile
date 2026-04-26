@@ -19,9 +19,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the salespath_env package
 COPY salespath_env/ ./salespath_env/
 
+# Copy and set permissions for the training script
+COPY run_hf_training.sh ./run_hf_training.sh
+RUN chmod +x ./run_hf_training.sh
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Start the FastAPI server on HF Spaces port
-CMD ["sh", "-c", "uvicorn salespath_env.server.app:app --host 0.0.0.0 --port ${PORT}"]
+# Execute the training script
+CMD ["./run_hf_training.sh"]

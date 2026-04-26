@@ -77,6 +77,21 @@ def _load_model_and_tokenizer(model_name: str, use_unsloth: bool = False):
         torch_dtype=torch.bfloat16 if bf16_supported else torch.float32,
         device_map="auto",
     )
+    
+    try:
+        from peft import LoraConfig, get_peft_model
+        print("Applying standard PEFT (LoRA) adapters...")
+        peft_config = LoraConfig(
+            r=16,
+            lora_alpha=16,
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(model, peft_config)
+    except ImportError:
+        print("Warning: PEFT not found. Proceeding with full parameter tuning (May OOM).")
+
     return model, tokenizer
 
 
