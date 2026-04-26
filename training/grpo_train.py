@@ -272,6 +272,32 @@ def run_grpo(args):
     trainer.save_model(str(Path(args.output_dir) / "grpo_final"))
     print(f"Saved GRPO model to {Path(args.output_dir) / 'grpo_final'}")
 
+    # --- Save reward history from trainer logs so plot_rewards.py works ---
+    output_path = Path(args.output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    rewards_path = output_path / "reward_history.txt"
+
+    log_rewards = []
+    for entry in trainer.state.log_history:
+        # TRL GRPO logs rewards under various key names depending on version
+        for key in ("reward", "rewards", "mean_reward", "train/reward", "train/rewards"):
+            if key in entry:
+                log_rewards.append(float(entry[key]))
+                break
+
+    if log_rewards:
+        with rewards_path.open("w") as f:
+            for idx, r in enumerate(log_rewards):
+                f.write(f"{idx}\t{r:.6f}\n")
+        print(f"Saved reward history ({len(log_rewards)} entries) → {rewards_path}")
+    else:
+        # Fallback: write a placeholder so plot_rewards.py doesn't crash
+        print("Warning: no reward entries found in trainer logs. Writing placeholder.")
+        with rewards_path.open("w") as f:
+            for entry in trainer.state.log_history:
+                if "loss" in entry:
+                    f.write(f"{entry.get('step', 0)}\t0.0\n")
+
     if args.push_to_hub:
         trainer.push_to_hub(dataset_name="salespath_synthetic_grpo")
         print(f"Pushed trainer model to hub repo: {args.hub_repo}")
