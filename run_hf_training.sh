@@ -1,16 +1,17 @@
 #!/bin/bash
 
-# Start the environment server in the background
+# Start the environment server in the background (HF Spaces default port 7860)
 echo "Starting SalesPath environment server..."
-uvicorn salespath_env.server.app:app --host 0.0.0.0 --port 8000 &
+uvicorn salespath_env.server.app:app --host 0.0.0.0 --port 7860 &
 
 # Give the server a few seconds to start up completely
 sleep 5
 
 # Start the GRPO Training using standard HuggingFace (PEFT)
 echo "Starting 7B GRPO Training..."
-PYTORCH_ALLOC_CONF=expandable_segments:True python -m training.grpo_train \
+PYTORCH_ALLOC_CONF=expandable_segments:True python -u -m training.grpo_train \
     --mode grpo \
+    --env-url http://127.0.0.1:7860 \
     --model-name Qwen/Qwen2.5-7B-Instruct \
     --grpo-steps 150 \
     --grpo-dataset-size 128 \

@@ -21,7 +21,7 @@ COPY salespath_env/ ./salespath_env/
 
 # Copy and set permissions for the training script
 COPY run_hf_training.sh ./run_hf_training.sh
-RUN chmod +x ./run_hf_training.sh
+RUN sed -i 's/\r$//' ./run_hf_training.sh && chmod +x ./run_hf_training.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
