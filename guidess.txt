@@ -1,0 +1,247 @@
+to run the entire SalesPath training pipeline on Hugging Face Spaces (paid GPU) without running into the same roadblocks you faced.
+
+---
+
+## 1. Repository structure
+
+Create a clean project folder with this layout:
+
+```
+salespath-training/
+├── Dockerfile
+├── scripts/
+│   └── run_training.sh
+├── training/
+│   ├── train_sft.py
+│   ├── train_grpo.py
+│   ├── eval_baseline_vs_trained.py
+│   ├── plot_rewards.py
+│   └── preflight_check.py
+├── salespath_env/             # your environment code
+├── pyproject.toml
+├── requirements.txt
+├── .dockerignore
+└── README.md
+```
+
+---
+
+## 2. The Dockerfile (GPU‑ready, health‑check safe)
+
+Create a `Dockerfile` that:
+
+- Starts from a CUDA base image.
+- Pins all dependencies (`torch`, `transformers`, `trl`, `peft`, etc.).
+- **Disables the health check** or uses a background server to keep the Space alive.
+- Runs a robust entrypoint script.
+
+```dockerfile
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PORT=7860
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev git curl \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pin NumPy to avoid breakage
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install "numpy<2"
+
+# Install PyTorch (adjust CUDA version if needed)
+RUN pip install torch==2.4.0 torchvision==0.19.0 --index-url https://download.pytorch.org/whl/cu121
+
+# Install core ML libraries (compatible versions)
+RUN pip install transformers==4.44.2 trl==0.11.0 peft==0.11.1 datasets==2.20.0 \
+    accelerate bitsandbytes huggingface_hub[cli] hf_transfer uvicorn
+
+# Copy project files
+WORKDIR /app
+COPY pyproject.toml requirements.txt ./
+COPY salespath_env ./salespath_env
+COPY training ./training
+COPY scripts/run_training.sh /app/run_training.sh
+
+# Install the package (no unsloth by default)
+RUN pip install -e . --no-deps || true
+
+RUN chmod +x /app/run_training.sh
+
+# 🔥 NO HEALTHCHECK – we'll use a background HTTP server in the entrypoint
+# The Space will not kill the container if no /health endpoint exists.
+# (Alternatively, you can keep HEALTHCHECK with a very long start‑period)
+
+CMD ["/app/run_training.sh"]
+```
+
+---
+
+## 3. The entrypoint script (`scripts/run_training.sh`)
+
+This script:
+
+- Starts a minimal background HTTP server (answers `/health` immediately).
+- Logs in to HF Hub (if token is provided).
+- Runs SFT, GRPO, evaluation, and plotting.
+- Uploads all artifacts to the model repo.
+- Finally, kills the background server and starts the main keepalive server.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+cd /app
+
+export PORT="${PORT:-7860}"
+export SFT_CHECKPOINT="${SFT_CHECKPOINT:-./sft_checkpoint}"
+export OUTPUT_DIR="${OUTPUT_DIR:-./grpo_checkpoint}"
+
+# ----------------------------------------------------------------------
+# 1. Background HTTP server (answers /health, keeps HF happy)
+# ----------------------------------------------------------------------
+python3 - <<EOF &
+import http.server
+import socketserver
+import os
+
+PORT = int(os.environ.get("PORT", 7860))
+class HealthHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'OK')
+        else:
+            self.send_response(404)
+            self.end_headers()
+with socketserver.TCPServer(("", PORT), HealthHandler) as httpd:
+    httpd.serve_forever()
+EOF
+sleep 2
+
+# ----------------------------------------------------------------------
+# 2. HF login (if token is set as secret)
+# ----------------------------------------------------------------------
+if [[ -n "${HF_TOKEN:-}" ]]; then
+    huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential
+fi
+
+# ----------------------------------------------------------------------
+# 3. Run training steps
+# ----------------------------------------------------------------------
+echo "=== 1/3 SFT ==="
+python training/train_sft.py
+
+echo "=== 2/3 GRPO ==="
+python training/train_grpo.py
+
+echo "=== 3/3 Eval ==="
+python training/eval_baseline_vs_trained.py \
+    --base "$SFT_CHECKPOINT" \
+    --trained "$OUTPUT_DIR" \
+    --episodes-per-level "${EVAL_EPISODES_PER_LEVEL:-4}"
+
+echo "=== 4/4 Plots ==="
+python training/plot_rewards.py --log ./reward_log.jsonl --out ./plots || echo "Plotting skipped"
+
+# ----------------------------------------------------------------------
+# 4. Upload model + artifacts to Hugging Face Hub
+# ----------------------------------------------------------------------
+if [[ -n "${HF_MODEL_REPO:-}" && -n "${HF_TOKEN:-}" ]]; then
+    echo "=== Upload GRPO adapters to $HF_MODEL_REPO ==="
+    huggingface-cli upload "$HF_MODEL_REPO" "$OUTPUT_DIR" . --repo-type model || true
+
+    # Also upload logs and plots
+    for f in reward_log.jsonl eval_results.md eval_results.json; do
+        if [[ -f "./$f" ]]; then
+            huggingface-cli upload "$HF_MODEL_REPO" "./$f" "$f" --repo-type model || true
+        fi
+    done
+    if [[ -d "./plots" ]]; then
+        huggingface-cli upload "$HF_MODEL_REPO" "./plots" "plots" --repo-type model || true
+    fi
+fi
+
+# ----------------------------------------------------------------------
+# 5. Kill background health server and start real keepalive server
+# ----------------------------------------------------------------------
+kill %1 || true
+exec uvicorn training.hf_keepalive_app:app --host 0.0.0.0 --port "$PORT"
+```
+
+---
+
+## 4. Environment variables and secrets (Space settings)
+
+Your friend must set these in the Space **Settings** under **Variables and secrets**:
+
+### Secrets (hidden)
+| Name | Value |
+|------|-------|
+| `HF_TOKEN` | Hugging Face write token (from settings/tokens) |
+
+### Variables (plain text)
+| Name | Recommended value | Purpose |
+|------|------------------|---------|
+| `HF_MODEL_REPO` | `YourUsername/salespath-grpo` | Target model repo |
+| `ROLLOUTS_PER_DIFFICULTY` | `16` | Collect more rollout data |
+| `NUM_GENERATIONS` | `4` | GRPO group size |
+| `PER_DEVICE_BATCH` | `2` | Batch size (adjust for GPU memory) |
+| `LR` | `8e-7` | Learning rate (stable) |
+| `GAMMA` | `0.98` | Discount factor |
+| `WARMUP_RATIO` | `0.1` | Warmup steps |
+| `NUM_REWARD_WORKERS` | `4` | Parallel reward workers (keep low) |
+| `MAX_SEQ_LEN` | `1024` | Reduce if OOM |
+| `EVAL_EPISODES_PER_LEVEL` | `4` | Number of eval episodes per difficulty |
+
+---
+
+## 5. Critical fixes to avoid your issues
+
+| Your issue | The fix |
+|------------|---------|
+| Launch timeout (30 min) | Background HTTP server answers `/health` immediately. |
+| Logs lost after restart | Use `fetch_space_logs` client‑side **during** training. |
+| OOM / crash during rollouts | Reduce `ROLLOUTS_PER_DIFFICULTY` (16), `NUM_REWARD_WORKERS` (4), `MAX_SEQ_LEN` (1024). |
+| Unsloth version conflicts | **Do not install unsloth** – use plain `transformers` + `peft`. |
+| TRL import error (`FSDPModule`) | Pin `trl==0.11.0` and `transformers==4.44.2`. |
+| PEFT adapter not loaded in eval | Use the `load_model` function that detects `adapter_config.json` and merges. |
+| Dense rewards overshadow closing | Increase terminal reward (e.g., +5.0) and add epsilon‑greedy exploration. |
+| Health check kills container | Either remove `HEALTHCHECK` or set `start-period` to 4+ hours. |
+
+---
+
+## 6. Step‑by‑step instructions for your friend
+
+1. **Create a new Space** on HF → Docker → GPU (T4 or L4).  
+2. **Clone** the empty Space locally.  
+3. **Copy** the project files (the structure above) into the clone.  
+4. **Set secrets and variables** in the Space settings (as listed).  
+5. **Push** the code to the Space (`git push origin main`).  
+6. **Monitor** the logs via CLI:  
+   ```bash
+   hf spaces logs YourUsername/space-name -f
+   ```  
+7. **When finished**, the model and all artifacts are automatically uploaded to `HF_MODEL_REPO`.  
+8. **Stop the Space** manually to avoid further billing.
+
+---
+
+## 7. Bonus: pre‑flight dependency check
+
+Create a small `training/preflight_check.py` that runs at the very beginning of `run_training.sh`:
+
+```python
+import torch, transformers, trl, peft
+print(f"torch: {torch.__version__}")
+print(f"transformers: {transformers.__version__}")
+print(f"trl: {trl.__version__}")
+print(f"peft: {peft.__version__}")
+assert trl.__version__ == "0.11.0", "trl version mismatch"
+# etc.
+```
+
+This catches version mismatches early.

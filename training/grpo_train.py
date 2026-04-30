@@ -320,7 +320,7 @@ def run_grpo(args):
         reward_funcs=salespath_reward_func,
         args=config,
         train_dataset=train_dataset,
-        processing_class=tokenizer,
+        tokenizer=tokenizer,
     )
 
     trainer.train()
