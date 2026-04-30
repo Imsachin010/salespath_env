@@ -7,9 +7,9 @@ import importlib
 
 REQUIRED_PACKAGES = {
     "torch": "2.0.0",
-    "transformers": "4.44.2",
-    "trl": "0.11.0",
-    "peft": "0.11.1",
+    "transformers": "4.44.0",
+    "trl": "0.14.0",
+    "peft": "0.11.0",
     "datasets": "2.0.0",
     "fastapi": "0.100.0",
     "httpx": "0.24.0",
