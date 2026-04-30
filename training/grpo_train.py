@@ -38,7 +38,7 @@ def _load_model_and_tokenizer(model_name: str, use_unsloth: bool = False):
     if use_unsloth:
         try:
             from unsloth import FastLanguageModel
-                        print("Loading with Unsloth in 4-bit + LoRA...")
+            print("Loading with Unsloth in 4-bit + LoRA...")
             model, tokenizer = FastLanguageModel.from_pretrained(
                 model_name=model_name,
                 max_seq_length=2048,
