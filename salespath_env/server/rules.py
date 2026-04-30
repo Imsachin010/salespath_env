@@ -104,13 +104,22 @@ def _followup_timing(
 ) -> bool:
     """
     R07:
-    FOLLOW_UP only valid after silence.
-    If prospect just responded last turn, violation.
+    FOLLOW_UP only valid after prospect silence.
+    Violation if the prospect's last response had actual content
+    (i.e., the prospect is still engaged and waiting for a reply).
     """
     if action.action_type == "FOLLOW_UP":
         if state.conversation_history:
-            last_speaker = state.conversation_history[-1].get("speaker", "agent")
-            return last_speaker == "prospect"
+            # Walk backwards to find the last prospect message
+            for entry in reversed(state.conversation_history):
+                if entry.get("speaker") == "prospect":
+                    response_token = entry.get("response_token", "")
+                    # FOLLOW_UP is only valid if the prospect went silent
+                    return response_token != "silence"
+            # No prospect message found — first turn, so violation
+            return True
+        # No history at all — first turn, can't FOLLOW_UP yet
+        return True
     return False
 
 

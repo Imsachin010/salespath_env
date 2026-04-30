@@ -13,7 +13,8 @@ IGNORE_PATTERNS = [
     "*.egg-info/**",
     "push_to_hub.py",
     "salespath_env/server/Dockerfile",  # root Dockerfile is used instead
-    "training/**",                        # exclude training scripts from Space
+    # Training scripts ARE included for HF Spaces GPU training
+    # "training/**",
 ]
 
 def main():

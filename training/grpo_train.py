@@ -39,13 +39,12 @@ def _load_model_and_tokenizer(model_name: str, use_unsloth: bool = False):
         try:
             from unsloth import FastLanguageModel
             print("Loading with Unsloth in 4-bit + LoRA...")
-            model, tokenizer = FastLanguageModel.from_pretrained(
+                        model, tokenizer = FastLanguageModel.from_pretrained(
                 model_name=model_name,
                 max_seq_length=2048,
                 load_in_4bit=True,
                 fast_inference=True,
                 max_lora_rank=16,
-                max_lora_rank_type="lora",
             )
             # Inject LoRA adapters to drastically reduce VRAM
             model = FastLanguageModel.get_peft_model(
@@ -292,7 +291,9 @@ def run_grpo(args):
             "or fix local pyarrow/datasets installation first."
         ) from exc
 
-    model, tokenizer = _load_model_and_tokenizer(args.model_name, use_unsloth=True)
+    # Try Unsloth first (4-bit saves VRAM), fallback to standard HF
+    use_unsloth = args.model_name.startswith("unsloth/")
+    model, tokenizer = _load_model_and_tokenizer(args.model_name, use_unsloth=use_unsloth)
     rows = _build_grpo_dataset_rows(args.grpo_dataset_size)
     train_dataset = Dataset.from_list(rows)
 
